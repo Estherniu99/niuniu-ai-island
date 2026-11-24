@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 工具效率对比记录表</title>
+<style>
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f4f7f5;color:#1d2b24;font-size:14px}
+header{background:#1f6f54;color:#fff;padding:14px 24px}header h1{margin:0;font-size:20px}header p{margin:4px 0 0;opacity:.9}
+main{max-width:1280px;margin:0 auto;padding:16px 24px}
+.card{background:#fff;border:1px solid #d7e2dc;border-radius:8px;padding:14px 16px;margin-bottom:14px}
+h2{font-size:16px;margin:0 0 10px}
+label{display:inline-block;margin:0 12px 8px 0}label span{display:block;font-size:12px;color:#55665d;margin-bottom:2px}
+input,select,button{font:inherit;padding:6px 8px;border:1px solid #b9c9c0;border-radius:6px;background:#fff}
+input[type=number]{width:90px}
+button{cursor:pointer}button.pri{background:#1f6f54;color:#fff;border-color:#1f6f54}button:disabled{opacity:.5;cursor:default}
+table{border-collapse:collapse;width:100%}th,td{border:1px solid #d7e2dc;padding:6px 8px;text-align:left;vertical-align:top}th{background:#e8f1ec}
+td.n{text-align:right}.muted{color:#55665d}.warn{background:#fff6e0;border:1px solid #e6c97a;border-radius:6px;padding:8px 10px}
+#timer{font-variant-numeric:tabular-nums;font-weight:600;margin:0 8px}
+</style></head><body>
+<header><h1>AI 工具效率对比记录表</h1><p>同一份材料、同一段提示词，分别在不同工具上跑一遍，把用时和差错记下来。数据只保存在本机浏览器里，不联网。</p></header>
+<main>
+<div class="card"><h2>① 记一次运行</h2>
+<label><span>培训条目</span><select id="item"></select></label>
+<label><span>工具</span><select id="tool"></select></label>
+<label><span>运行日期</span><input type="date" id="date"></label>
+<label><span>总用时（分钟）</span><input type="number" id="total" min="0" step="0.1"></label>
+<label><span>人工介入次数</span><input type="number" id="touch" min="0" step="1"></label>
+<label><span>预期应发现项数</span><input type="number" id="expect" min="0" step="1"></label>
+<label><span>漏项（该发现没发现）</span><input type="number" id="miss" min="0" step="1"></label>
+<label><span>错项（说错或编造）</span><input type="number" id="wrong" min="0" step="1"></label>
+<label><span>复核耗时（分钟）</span><input type="number" id="review" min="0" step="0.1"></label>
+<label><span>备注</span><input id="note" size="36" placeholder="例如：第 2 步需要手动确认列对应"></label>
+<div><button id="tStart">开始计时</button><span id="timer">00:00</span><button id="tStop" disabled>停止并填入“总用时”</button>
+<button id="tStopR" disabled>停止并填入“复核耗时”</button> <button class="pri" id="add">保存这次运行</button> <span id="msg" class="muted"></span></div>
+<p class="muted">总用时：从发出提示词到拿到全部产出。人工介入：中途点确认、补充说明、改正的次数。预期应发现项数：见 demo-materials 各文件夹的“预期结果.md”。复核耗时：人工逐条核对产出花的时间。</p>
+</div>
+<div class="card"><h2>② 运行记录</h2><div style="overflow:auto"><table id="runs"></table></div>
+<p><button id="exp">导出 CSV</button> <label style="margin:0"><span style="display:inline">导入 CSV：</span><input type="file" id="imp" accept=".csv"></label> <button id="clr">清空全部记录</button></p></div>
+<div class="card"><h2>③ 按工具汇总</h2><div style="overflow:auto"><table id="sum"></table></div>
+<p class="warn">检出率 =（预期应发现项数 − 漏项）÷ 预期应发现项数。次数少时差异不说明问题；同一条目至少各跑一次再比较。这张表只做算术，不替你下结论。</p></div>
+</main>
+<script>
+'use strict';
+const ITEMS=['TMF 智能归档','医学文档智能处理','Excel 自动处理','办公文档批处理','EDC 数据整合','药品管理','文件核查','业务网页获取（生生物流）'];
+const TOOLS=['公司 Agent 平台','大圆智能助理','WorkBuddy','豆包','人工（对照）'];
+const COLS=[['item','培训条目'],['tool','工具'],['date','运行日期'],['total','总用时(分钟)'],['touch','人工介入次数'],['expect','预期应发现项数'],['miss','漏项'],['wrong','错项'],['review','复核耗时(分钟)'],['note','备注']];
+const NUM=['total','touch','expect','miss','wrong','review'],KEY='cra-efficiency-runs-v1',$=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let runs=[];try{runs=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(runs))}catch(e){}};
+$('#item').innerHTML=ITEMS.map(x=>`<option>${x}</option>`).join('');$('#tool').innerHTML=TOOLS.map(x=>`<option>${x}</option>`).join('');
+$('#date').value=new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const num=v=>v===''||v==null||isNaN(+v)?null:+v,fmt=v=>v==null?'':(Math.round(v*10)/10).toString();
+function render(){
+  $('#runs').innerHTML='<tr><th>#</th>'+COLS.map(c=>`<th>${c[1]}</th>`).join('')+'<th></th></tr>'+(runs.map((r,i)=>`<tr><td>${i+1}</td>`+COLS.map(c=>`<td class="${NUM.includes(c[0])?'n':''}">${esc(NUM.includes(c[0])?fmt(r[c[0]]):r[c[0]])}</td>`).join('')+`<td><button data-i="${i}">删除</button></td></tr>`).join('')||`<tr><td colspan="${COLS.length+2}" class="muted">还没有记录</td></tr>`);
+  const g={};for(const r of runs)(g[r.tool]=g[r.tool]||[]).push(r);
+  const sum=(a,k)=>a.reduce((s,r)=>s+(r[k]||0),0),avg=(a,k)=>{const v=a.filter(r=>r[k]!=null);return v.length?sum(v,k)/v.length:null};
+  $('#sum').innerHTML='<tr><th>工具</th><th>运行次数</th><th>覆盖条目数</th><th>平均总用时(分钟)</th><th>平均复核耗时(分钟)</th><th>人工介入合计</th><th>预期项合计</th><th>漏项合计</th><th>错项合计</th><th>检出率</th></tr>'+
+    (Object.keys(g).map(t=>{const a=g[t],e=sum(a.filter(r=>r.expect!=null&&r.miss!=null),'expect'),m=sum(a.filter(r=>r.expect!=null&&r.miss!=null),'miss');
+      return `<tr><td>${esc(t)}</td><td class="n">${a.length}</td><td class="n">${new Set(a.map(r=>r.item)).size}</td><td class="n">${fmt(avg(a,'total'))}</td><td class="n">${fmt(avg(a,'review'))}</td><td class="n">${sum(a,'touch')}</td><td class="n">${e}</td><td class="n">${sum(a,'miss')}</td><td class="n">${sum(a,'wrong')}</td><td class="n">${e?Math.round((e-m)/e*100)+'%':'—'}</td></tr>`}).join('')||'<tr><td colspan="10" class="muted">还没有记录</td></tr>');
+}
+$('#add').onclick=()=>{const r={item:$('#item').value,tool:$('#tool').value,date:$('#date').value,note:$('#note').value.trim()};for(const k of NUM)r[k]=num($('#'+k).value);
+  if(r.total==null){$('#msg').textContent='请先填总用时';return}if(r.expect!=null&&r.miss!=null&&r.miss>r.expect){$('#msg').textContent='漏项不能大于预期应发现项数';return}
+  runs.push(r);save();render();$('#msg').textContent='已保存';for(const k of NUM)$('#'+k).value='';$('#note').value=''};
+$('#runs').onclick=e=>{const b=e.target.closest('button[data-i]');if(b){runs.splice(+b.dataset.i,1);save();render()}};
+$('#clr').onclick=()=>{if(runs.length&&confirm('确定清空全部记录？'))runs=[],save(),render()};
+const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+$('#exp').onclick=()=>{const csv='\uFEFF'+[COLS.map(c=>q(c[1])).join(','),...runs.map(r=>COLS.map(c=>q(r[c[0]])).join(','))].join('\r\n'),a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='AI工具效率对比_'+$('#date').value.replace(/-/g,'')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+function parseCsv(t){const rows=[];let row=[],cur='',inq=false;t=t.replace(/^\uFEFF/,'');for(let i=0;i<t.length;i++){const c=t[i];if(inq){if(c==='"'){if(t[i+1]==='"'){cur+='"';i++}else inq=false}else cur+=c}else if(c==='"')inq=true;else if(c===','){row.push(cur);cur=''}else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;row.push(cur);rows.push(row);row=[];cur=''}else cur+=c}if(cur!==''||row.length){row.push(cur);rows.push(row)}return rows}
+$('#imp').onchange=async e=>{const f=e.target.files[0];if(!f)return;const rows=parseCsv(await f.text()),h=rows.shift()||[],idx=COLS.map(c=>h.indexOf(c[1]));
+  if(idx.slice(0,4).some(i=>i<0)){$('#msg').textContent='这个 CSV 的表头不对，请用本页导出的文件';return}
+  let n=0;for(const r of rows){if(!r.some(v=>v!==''))continue;const o={};COLS.forEach((c,j)=>{const v=idx[j]<0?'':r[idx[j]];o[c[0]]=NUM.includes(c[0])?num(v):v});runs.push(o);n++}save();render();$('#msg').textContent=`已导入 ${n} 条`;e.target.value=''};
+let t0=null,tick=null;const two=n=>String(n).padStart(2,'0'),elapsed=()=>(Date.now()-t0)/1000;
+$('#tStart').onclick=()=>{t0=Date.now();$('#tStart').disabled=true;$('#tStop').disabled=$('#tStopR').disabled=false;tick=setInterval(()=>{const s=Math.floor(elapsed());$('#timer').textContent=two(Math.floor(s/60))+':'+two(s%60)},500)};
+const stop=id=>()=>{if(t0==null)return;$('#'+id).value=(Math.round(elapsed()/6)/10).toString();clearInterval(tick);t0=null;$('#tStart').disabled=false;$('#tStop').disabled=$('#tStopR').disabled=true};
+$('#tStop').onclick=stop('total');$('#tStopR').onclick=stop('review');render();
+</script></body></html>
